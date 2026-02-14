@@ -1,0 +1,310 @@
+import asyncio
+import re
+import types as tys
+import typing as ty
+from abc import ABC, abstractmethod
+from contextlib import suppress
+from enum import Enum
+from pathlib import Path
+
+from bs4 import BeautifulSoup, Tag
+from loguru import logger
+
+
+class NotImplementedVariable:
+    """
+    >>> class A:
+    ...     var = NotImplementedVariable()
+    >>> class B(A): ...
+    >>> class C(A):
+    ...     var = 1
+    >>> B.var
+    NotImplementedError
+    >>> C.var
+    1
+    """
+
+    def __get__(self, instance, owner):
+        raise NotImplementedError()
+
+
+class IOTasksManager:
+    """
+    Asynchronous task manager
+    Implements a queue and limits the number of simultaneously executing tasks
+    Executes all tasks from `tasks_generator`
+    """
+
+    def __init__(self, max_tasks: int = 1):
+        self._max_tasks: int = max_tasks
+        self._tasks_count: int = 0
+        self._tasks_generator: ty.Generator[ty.Coroutine] | None = None
+        self._future: asyncio.Future | None = None
+        self._tasks: list[asyncio.Task] = []
+
+    def execute_tasks_factory(
+        self, tasks_generator: ty.Generator[ty.Coroutine]
+    ) -> None:
+        """
+        Setups `tasks_generator` and waits for finishing
+        """
+        asyncio.run(self.wait_finishing(tasks_generator))
+
+    async def wait_finishing(
+        self, tasks_generator: ty.Generator[ty.Coroutine]
+    ) -> None:
+        """
+        Setups `tasks_generator`, creates start tasks pool and waits for finishing
+        """
+        if self._tasks_generator:
+            raise RuntimeError("This `IOTasksManager` is busy")
+        self._tasks_generator = tasks_generator
+        self._future = asyncio.Future()
+        for _ in range(self._max_tasks):
+            self._run_next()
+        with suppress(asyncio.CancelledError):
+            await self._future
+
+    def _run_next(self) -> None:
+        """
+        Starts the next task
+        """
+        if not self._tasks_generator:
+            return
+        if coro := next(self._tasks_generator, None):
+            self._tasks_count += 1
+            self._tasks.append(t := asyncio.create_task(coro))
+            t.add_done_callback(self._task_done_callback)
+        elif self._tasks_count == 0:
+            asyncio.create_task(self.terminate())
+
+    def _task_done_callback(self, t: asyncio.Task) -> None:
+        """
+        Calls when task is done
+        Starts the next task
+        """
+        self._tasks.remove(t)
+        self._tasks_count -= 1
+        self._run_next()
+
+    async def terminate(self) -> None:
+        """
+        Stops running next tasks
+        """
+        if self._future:
+            self._tasks_generator = None
+            for t in self._tasks:
+                t.cancel()
+            self._future.cancel()
+            self._future = None
+        while self._tasks_count:
+            await asyncio.sleep(0.01)
+
+
+class BaseProgressHandler[Statuses: Enum](ABC):
+    """
+    Progress handler.
+    Abstract class for handling progress updates.
+    >>> N: int = 10
+    >>> process_handler = BaseProgressHandler()
+    >>> process_handler.init(Statuses.preparing_data)
+    >>> data = list(range(N))
+    >>> process_handler.init(Statuses.processing, total_count=N)
+    >>> for _ in data:
+    ...     process_handler.progress(1)
+    >>> process_handler.init(Statuses.finished)
+    """
+
+    DEFAULT_STATUS: Statuses | None = None
+    """ Status that is used when instance created """
+
+    def __init__(self):
+        self._status: Statuses | None = self.DEFAULT_STATUS
+        self._total_count: int | None = None
+        self._done_count: int | None = None
+        create_instance_id(self)
+        logger.opt(colors=True).trace(f"{self:colored} created")
+
+    @property
+    def status(self) -> Statuses | None:
+        return self._status
+
+    def init_status(
+        self, status: Statuses, total_count: int | None = None
+    ) -> None:
+        self._status = status
+        self._total_count = total_count
+        self._done_count = None if total_count is None else 0
+        logger.opt(colors=True).trace(
+            f"{self:colored} - <y>{status.value}</y>"
+            + (f" total_size=<y>{total_count}</y>" if total_count else "")
+        )
+
+    def progress(self, count: int) -> None:
+        if self._done_count is None:
+            raise RuntimeError(f"{self:colored} has a non-countable status")
+        self._done_count += count
+        self.show_progress()
+
+    def set_done_count(self, count: int) -> None:
+        if self._total_count is None:
+            raise RuntimeError(f"{self:colored} has a non-countable status")
+        self._done_count = count
+        self.show_progress()
+
+    @abstractmethod
+    def show_progress(self) -> None:
+        """
+        Displays the progress.
+        """
+
+    def __repr__(self):
+        return f"PH-{instance_id(self)}"
+
+    def __format__(self, format_spec):
+        if format_spec == "colored":
+            return f"<y>{self!r}</y>"
+        return repr(self)
+
+
+def prepare_file_metadata(
+    file_path: Path,
+    chapter_index: int,
+    author: str,
+    title: str,
+    series_name: str,
+) -> None:
+    """
+    Prepares file metadata
+    """
+
+
+def fix_m4a_meta(file_path: Path) -> None:
+    """
+    Fixes m4a file metadata.
+    """
+
+
+def merge_ts_files(
+    ts_file_paths: list[Path],
+    output_dir: Path,
+    output_file_name: str,
+) -> None:
+    """
+    Merges ts files to one.
+    """
+
+
+def convert_ts_to_mp3(ts_file_path: Path, mp3_file_path: Path) -> None:
+    """
+    Converts ts files to mp3 by ffmpeg.
+    """
+
+
+def split_ts(ts_file_path: Path, on: int) -> tuple[Path, Path]:
+    """
+    Splits one ts file at `on` sec.
+    Creates two new files with same names and suffixes `-1` and `-2`.
+    """
+
+
+def safe_name(text: str) -> str:
+    """
+    Removes or replaces characters not allowed in Windows file names.
+    """
+    while text.count('"') >= 2:
+        text = re.sub(r'"(.*?)"', r"«\g<1>»", text)
+    return re.sub(r'[\\/:*?"<>|+]', "", text).rstrip(". ")
+
+
+def get_base_generics(cls: type, base_class: type) -> dict[ty.TypeVar, ty.Any]:
+    """
+    Returns the generic types of base class.
+    Supports multiple and deep inheritance.
+    """
+    if not issubclass(cls, base_class):
+        raise ValueError(
+            f"{cls.__name__} is not a subclass of {base_class.__name__}"
+        )
+    t_vars = {}
+    while True:
+        parent_class = [x for x in cls.__bases__ if issubclass(x, base_class)]
+        if len(parent_class) > 1:
+            raise ValueError("Multiple inheritance not supported")
+        parent_class = parent_class[0]
+        parent_generic = next(
+            filter(
+                lambda x: ty.get_origin(x) is ty.Generic,
+                tys.get_original_bases(parent_class),
+            ),
+            None,
+        )
+        passes_generic = next(
+            filter(
+                lambda x: ty.get_origin(x) is parent_class,
+                tys.get_original_bases(cls),
+            ),
+            None,
+        )
+        if parent_generic and not passes_generic:
+            raise ValueError(
+                f"Generic type for class {parent_class.__name__} "
+                f"not passed in {cls.__name__} class"
+            )
+        passes_generic = ty.get_args(passes_generic)
+        parent_generic = ty.get_args(parent_generic)
+        t_vars = {
+            pg: t_vars.get(pt, pt)
+            for pg, pt in zip(parent_generic, passes_generic)
+        }
+        cls = parent_class
+        if cls is base_class:
+            break
+
+    return t_vars
+
+
+def create_instance_id(obj: ty.Any) -> int:
+    """
+    Creates an instance identifier
+    >>> class A:
+    ...     def __init__(self):
+    ...         create_instance_id(self)
+    >>> a1 = A()
+    >>> a2 = A()
+    >>> instance_id(a1)
+    1
+    >>> instance_id(a2)
+    2
+    """
+    last_instance_id = getattr(obj.__class__, "_last_instance_id", 0)
+    new_instance_id = last_instance_id + 1
+    setattr(obj, "_instance_id", new_instance_id)
+    setattr(obj.__class__, "_last_instance_id", new_instance_id)
+    return new_instance_id
+
+
+def instance_id(obj: ty.Any) -> int | None:
+    """
+    :returns: Instance identifier
+    """
+    return getattr(obj, "_instance_id", None)
+
+
+def html_to_text(html: str) -> str:
+    """
+    Fetches all text from HTML.
+    """
+    soup = BeautifulSoup(html, "html.parser")
+    return soup.get_text()
+
+
+def find_in_soup(
+    soup: Tag,
+    selector: str,
+    default: str = "",
+    modification: ty.Callable[[str], str] = str.strip,
+) -> str:
+    if el := soup.select_one(selector):
+        return modification(el.text)
+    return default
