@@ -13,11 +13,9 @@ class BookApp : public Gtk::Window {
 private:
     Glib::RefPtr<Gtk::Builder> builder;
 
-    Gtk::Entry* url_entry;
-    Gtk::Button* add_button;
     Gtk::Box* books_container;
 
-    std::unique_ptr<DBProxy> db_proxy;
+    std::unique_ptr<DBProxy> db;
 
     struct BookWidget {
         Gtk::Frame* frame;
@@ -31,7 +29,6 @@ public:
     virtual ~BookApp() = default;
 
 protected:
-    void on_add_button_clicked();
     void add_book();
     void load_books_from_db();
     void add_book_to_ui(const RawBook& book);
@@ -41,7 +38,7 @@ protected:
 
 BookApp::BookApp() {
     std::filesystem::create_directories(DOWNLOAD_PATH);
-    db_proxy = std::make_unique<DBProxy>(DB_PATH);
+    db = std::make_unique<DBProxy>(DB_PATH);
 
     set_title("Библиотека книг");
     set_default_size(600, 500);
@@ -69,7 +66,7 @@ BookApp::BookApp() {
 
 void BookApp::load_books_from_db() {
     try {
-        auto books = db_proxy->get_all_books();
+        auto books = db->get_all_books();
         for (const auto& book : books) {
             add_book_to_ui(book);
         }
@@ -121,7 +118,7 @@ void BookApp::download_book(const RawBook& book, Gtk::Button* button) {
     });
 
     try {
-        auto fresh_book = db_proxy->get_book_by_id(book.id);
+        auto fresh_book = db->get_book_by_id(book.id);
         if (fresh_book && fresh_book->downloaded) {
             Glib::signal_idle().connect_once([button]() {
                 button->set_label("Скачано");
@@ -132,7 +129,7 @@ void BookApp::download_book(const RawBook& book, Gtk::Button* button) {
 
         std::string full_path = DOWNLOAD_PATH + book.get_path();
         if (::download(book, full_path)) {
-            db_proxy->update_download_status(book.id, true);
+            db->update_download_status(book.id, true);
 
             Glib::signal_idle().connect_once([button]() {
                 button->set_label("Скачано");
