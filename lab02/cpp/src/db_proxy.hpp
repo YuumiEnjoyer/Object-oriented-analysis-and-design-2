@@ -5,7 +5,7 @@
 #include <memory>
 #include "db.hpp"
 
-class DBProxy {
+class DBProxy : public IDB {
 private:
     std::string db_path;
     std::unique_ptr<IDB> db;

@@ -15,7 +15,7 @@ private:
 
     Gtk::Box* books_container;
 
-    std::unique_ptr<DBProxy> db;
+    std::unique_ptr<IDB> db;
 
     struct BookWidget {
         Gtk::Frame* frame;
