@@ -7,10 +7,10 @@ function Load-Env {
     }
 }
 
-if (Test-Path -Path "../.env" -PathType Leaf) {
-    Load-Env "../.env"
-} elseif (Test-Path -Path "../.env.temp" -PathType Leaf) {
-    Load-Env "../.env.temp"
+if (Test-Path -Path "../../.env" -PathType Leaf) {
+    Load-Env "../../.env"
+} elseif (Test-Path -Path "../../.env.temp" -PathType Leaf) {
+    Load-Env "../../.env.temp"
 }
 
 mvn exec:java
