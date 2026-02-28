@@ -26,7 +26,7 @@ def show_user(user: User) -> None:
 
 
 root = tk.Tk()
-root.title("Book Downloader")
+root.title("DBManager")
 root.geometry("350x200")
 
 enter_label = tk.Label(root, text="Enter username:")
