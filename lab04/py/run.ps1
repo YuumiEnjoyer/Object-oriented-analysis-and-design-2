@@ -21,4 +21,6 @@ if (Test-Path -Path "venv") {
     $pythonPath = "python"
 }
 
-Invoke-Expression "$pythonPath src/main.py"
+cd "src"
+Invoke-Expression "$pythonPath main.py"
+cd ".."
